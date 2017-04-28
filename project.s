@@ -12,6 +12,10 @@ tbl_sep_m:  .asciiz " | "
 tbl_sep_r:  .asciiz " |\n"
 newline:    .asciiz "\n"
 .align 2
+dbl_const_0: .double 0.0
+dbl_2pi:	 .double 6.28318530717958647692528676655900576
+dbl_pi:	 .double 3.14159265358979323846264338327950288
+dbl_half_pi: .double 1.57079632679489661923132169163975144
 
 .globl main
 .text
@@ -131,14 +135,100 @@ main:
 # end main ##########################################
 
 
-sin.d:
-  mov.d $f0, $f12   # just a dummy
-  jr $ra
-
-cos.d:
-  mov.d $f0, $f12   # just a dummy
-  jr $ra
-
 tan.d:
-  mov.d $f0, $f12   # just a dummy
-  jr $ra
+	addi 	$sp, $sp, -12
+	sw		$ra, 0($sp)
+	s.d		$f20, 4($sp)
+	mov.d $f20, $f12
+	jal sin.d
+	mov.d $f12, $f20
+	mov.d $f20, $f0
+	jal cos.d
+	div.d $f0, $f20, $f0
+	lw		$ra, 0($sp)
+	l.d		$f20, 4($sp)
+	addi	$sp, 12
+	jr $ra
+sin.d:
+	l.d $f2, dbl_half_pi
+	sub.d $f12, $f12, $f2
+	j cos.d	
+#Prepares the value for the cos.raw function
+#x: ($f12, $f13)
+#return: ($f0, $f1)
+#$f2: various multiples of pi
+#$f4: lowest 2pi multiple of $f12
+#Accurate for 0 <= x <= pi/2
+cos.d:
+	addi 	$sp, $sp, -4
+	sw		$ra, 0($sp)
+	l.d $f2, dbl_const_0
+	c.lt.d $f2, $f12
+	bc1t cos_pos
+		neg.d $f12, $f12
+	cos_pos:
+	l.d $f2, dbl_2pi
+	div.d $f4, $f12, $f2
+	cvt.w.d $f4, $f4
+	cvt.d.w $f4, $f4
+	mul.d $f4, $f4, $f2
+	sub.d $f12, $f12, $f4 #f12 is now in [0;2pi)
+	#Manipulating $f0 so that cos.raw gets $f0 [0;pi/2) for higher precision
+	l.d $f2, dbl_half_pi
+	c.lt.d $f12, $f2
+	bc1t cos_lower_half_pi
+	l.d $f2, dbl_pi
+	c.lt.d $f12, $f2
+	bc1t cos_lower_pi
+		sub.d $f12, $f12, $f2
+		jal cos0
+		neg.d $f12, $f12
+		j cos_end
+	cos_lower_pi:
+		jal cos0
+		neg.d $f2, $f2
+		j cos_end
+	cos_lower_half_pi:
+		jal cos0
+	cos_end:
+	lw		$ra, 0($sp)
+	addi	$sp, 4
+	jr $ra	
+
+#x: ($f12, $f13)
+#return: ($f0, $f1)
+#Accurate for 0 <= x <= pi/2
+#$t0 = amount of approx. terms
+#($f0, $f1) = current value of cos
+#($f2, $f3) = last taylor series element without (-1)^n
+#($f4, $f5) = (-1)^n
+#($f6, $f7) = ($f0, $f1)^2
+#($f8, $f9) = n
+#($f10, $f11) = n * (n - 1)
+#($f12, $f13) = $f4 * $f6/$f10
+#($f14, $f15) = 1.0
+#($f16, $f16) = 3.0
+
+cos0:
+	li.d	$f14, 1.0
+	li.d	$f16, 3.0
+	li 		$t0, 20
+	mov.d 	$f0, $f14
+	mov.d	$f2, $f0
+	li.d 	$f4, -1.0
+	mul.d	$f6, $f12, $f12
+	li.d 	$f8, 2.0
+	cos0_loop_start:
+		mov.d 	$f10, $f8
+		sub.d 	$f8 , $f8, $f14
+		mul.d 	$f10, $f10, $f8
+		div.d 	$f2, $f2, $f10
+		mul.d 	$f2, $f2, $f6
+		mov.d 	$f12, $f2
+		mul.d 	$f12, $f12, $f4
+		add.d 	$f0, $f0, $f12
+		neg.d 	$f4, $f4
+		add.d 	$f8, $f8, $f16
+		addi 	$t0, $t0, -2
+	bge $t0, $zero, cos0_loop_start
+	jr $ra
