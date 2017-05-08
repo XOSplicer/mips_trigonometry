@@ -11,7 +11,7 @@ tbl_sep_l:  .asciiz "| "
 tbl_sep_m:  .asciiz " | "
 tbl_sep_r:  .asciiz " |\n"
 newline:    .asciiz "\n"
-.align 2
+.align 3
 dbl_const_0: .double 0.0
 dbl_2pi:	 .double 6.28318530717958647692528676655900576
 dbl_pi:	 .double 3.14159265358979323846264338327950288
@@ -29,6 +29,15 @@ dbl_half_pi: .double 1.57079632679489661923132169163975144
 # $f16 temp_f
 # $f18 temp_f2
 main:
+  li $t0, 5
+  mtc1.d  $t0, $f12
+  cvt.d.w $f12, $f12
+  jal cos.d
+
+  li $v0, 10
+  syscall
+
+
   # ask for n
   li    $v0, 4      # systemcall print string
   la    $a0, ask_n
@@ -84,6 +93,11 @@ main:
 
     # calc sin(x)
     mov.d $f12, $f20
+
+    # TODO just a test
+    li  $t0, 5
+    mtc1.d $t0, $f12
+    cvt.d.w $f12, $f12
     jal sin.d
 
     # print sin(x)
@@ -152,7 +166,7 @@ tan.d:
 sin.d:
 	l.d $f2, dbl_half_pi
 	sub.d $f12, $f12, $f2
-	j cos.d	
+	j cos.d
 #Prepares the value for the cos.raw function
 #x: ($f12, $f13)
 #return: ($f0, $f1)
@@ -193,7 +207,7 @@ cos.d:
 	cos_end:
 	lw		$ra, 0($sp)
 	addi	$sp, 4
-	jr $ra	
+	jr $ra
 
 #x: ($f12, $f13)
 #return: ($f0, $f1)
