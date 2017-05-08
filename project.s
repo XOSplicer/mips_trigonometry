@@ -11,7 +11,7 @@ tbl_sep_l:  .asciiz "| "
 tbl_sep_m:  .asciiz " | "
 tbl_sep_r:  .asciiz " |\n"
 newline:    .asciiz "\n"
-.align 3
+.align 2
 dbl_const_0: .double 0.0
 dbl_2pi:	 .double 6.28318530717958647692528676655900576
 dbl_pi:	 .double 3.14159265358979323846264338327950288
@@ -29,13 +29,13 @@ dbl_half_pi: .double 1.57079632679489661923132169163975144
 # $f16 temp_f
 # $f18 temp_f2
 main:
-  li $t0, 5
-  mtc1.d  $t0, $f12
-  cvt.d.w $f12, $f12
-  jal cos.d
+#  li $t0, 5
+#  mtc1.d  $t0, $f12
+#  cvt.d.w $f12, $f12
+#  jal cos.d
 
-  li $v0, 10
-  syscall
+  #li $v0, 10
+  #syscall
 
 
   # ask for n
@@ -95,9 +95,6 @@ main:
     mov.d $f12, $f20
 
     # TODO just a test
-    li  $t0, 5
-    mtc1.d $t0, $f12
-    cvt.d.w $f12, $f12
     jal sin.d
 
     # print sin(x)
@@ -196,11 +193,12 @@ cos.d:
 	bc1t cos_lower_pi
 		sub.d $f12, $f12, $f2
 		jal cos0
-		neg.d $f12, $f12
+		neg.d $f0, $f0
 		j cos_end
 	cos_lower_pi:
+    sub.d $f12, $f2, $f12
 		jal cos0
-		neg.d $f2, $f2
+		neg.d $f0, $f0
 		j cos_end
 	cos_lower_half_pi:
 		jal cos0
