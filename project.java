@@ -1,11 +1,6 @@
 
 public class Project {
     
-    public static void main(String[] args) {
-        System.out.println(tan(-412.52));
-        System.out.println(Math.tan(-412.52));
-    }
-    
     public static double tan(double x) {
         return sin(x) / cos(x);
     }
