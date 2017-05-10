@@ -53,7 +53,7 @@ main:
   li    $v0, 7      # systemcall read double
   syscall
   mov.d $f20, $f0   # x_i = x_min
-
+  
   # ask for x_max
   li    $v0, 4      # systemcall print string
   la    $a0, ask_x_max
@@ -110,7 +110,7 @@ main:
     # calc cos(x)
     mov.d $f12, $f20
     jal cos.d
-
+    
     # print cos(x)
     li    $v0, 3      # systemcall print double
     mov.d $f12, $f0
@@ -224,7 +224,7 @@ cos.d:
 cos0:
 	li.d	$f14, 1.0
 	li.d	$f16, 3.0
-	li 		$t0, 20
+	li 		$t0, 40
 	mov.d 	$f0, $f14
 	mov.d	$f2, $f0
 	li.d 	$f4, -1.0
@@ -236,8 +236,7 @@ cos0:
 		mul.d 	$f10, $f10, $f8
 		div.d 	$f2, $f2, $f10
 		mul.d 	$f2, $f2, $f6
-		mov.d 	$f12, $f2
-		mul.d 	$f12, $f12, $f4
+		mul.d 	$f12, $f2, $f4
 		add.d 	$f0, $f0, $f12
 		neg.d 	$f4, $f4
 		add.d 	$f8, $f8, $f16
