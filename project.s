@@ -56,11 +56,11 @@ main:
   syscall
   mov.d $f16, $f0   # temp_f = x_max
 
-  # test if !(x_min <= x_max) ==> error
+  # test if !(x_min <= x_max) then goto error
   c.le.d $f20, $f16
   bc1f  reenter
 
-  # test if n <= 0 ==> error
+  # test if n <= 0 then goto error
   ble   $s0, $zero, reenter
 
   # calculate step size
@@ -68,7 +68,7 @@ main:
   sub.d $f16, $f16, $f20  # temp_f = x_max - x_min
   move  $t0, $s0          # t0 = n
   li    $t1, 1            # const 1
-  # if (n!=1) t0--, which is n>1
+  # if (n!=1) then t0--, which is when n>1
   beq   $t0, $t1, not_dec_n
   addi  $t0, $t0, -1      # t0 = n-1
   not_dec_n:
@@ -164,47 +164,74 @@ restart:
   j     main
 
 # end main ##########################################
+#####################################################
 
-
+# tan.d #########################################
+# calculate tan(x) using sin(x) / cos(x)
+# argument: x: ($f12, $f13)
+# return: (f0, f1)
+# $f20: save x, sin(x) between calls
 tan.d:
+  # save $ra, ($f20, $f21) on stack
 	addi 	$sp, $sp, -12
 	sw		$ra, 0($sp)
 	s.d		$f20, 4($sp)
-	mov.d $f20, $f12
-	jal sin.d
-	mov.d $f12, $f20
-	mov.d $f20, $f0
-	jal cos.d
-	div.d $f0, $f20, $f0
+
+  # calculate tan(x)
+	mov.d $f20, $f12   # f20 = x
+	jal sin.d          # calc sin(x) in f0
+	mov.d $f12, $f20   # arg = x
+	mov.d $f20, $f0    # f20 = sin(x)
+	jal cos.d          # calc cos(x) in f0
+	div.d $f0, $f20, $f0 # f0 = sin(x) / cos(x)
+
+  # restore $ra, ($f20, $f21) from stack
 	lw		$ra, 0($sp)
 	l.d		$f20, 4($sp)
 	addi	$sp, 12
+
 	jr $ra
+# tan.d end #########################################
+#####################################################
+
+# sin.d #########################################
+# calculate sin(x) using cos(x-pi/2)
+# argument x: ($f12, $f13)
+# return: ($f0, $f1) (using cos.d)
+# ($f2, $f3) = pi/2
 sin.d:
 	l.d $f2, dbl_half_pi
-	sub.d $f12, $f12, $f2
-	j cos.d
-#Prepares the value for the cos.raw function
-#x: ($f12, $f13)
-#return: ($f0, $f1)
-#$f2: various multiples of pi
-#$f4: lowest 2pi multiple of $f12
-#Accurate for 0 <= x <= pi/2
+	sub.d $f12, $f12, $f2  # x = x-pi/2
+	j cos.d                 # don't change $ra
+# sin.d end #########################################
+#####################################################
+
+# cos.d #########################################
+# Prepares the value for the cos0 (raw taylor) function
+# argument: x: ($f12, $f13)
+# return: ($f0, $f1)
+# $f2: various multiples of pi
+# $f4: lowest 2pi multiple of $f12
 cos.d:
+  # save $ra on stack
 	addi 	$sp, $sp, -4
 	sw		$ra, 0($sp)
-	l.d $f2, dbl_const_0
-	c.lt.d $f2, $f12
+
+	l.d $f2, dbl_const_0   # f2 = 0.0
+	c.lt.d $f2, $f12       # if x<0.0 then x=-x
 	bc1t cos_pos
 		neg.d $f12, $f12
 	cos_pos:
-	l.d $f2, dbl_2pi
-	div.d $f4, $f12, $f2
-	cvt.w.d $f4, $f4
+	l.d $f2, dbl_2pi       # f2 = 2*pi
+	div.d $f4, $f12, $f2   # f4 = x / (2*pi)
+	cvt.w.d $f4, $f4       # f4 = floor(x / (2*pi))
 	cvt.d.w $f4, $f4
-	mul.d $f4, $f4, $f2
-	sub.d $f12, $f12, $f4 #f12 is now in [0;2pi)
-	#Manipulating $f0 so that cos.raw gets $f0 [0;pi/2) for higher precision
+	mul.d $f4, $f4, $f2    # f4 = floor(x / (2*pi)) * 2*pi
+	sub.d $f12, $f12, $f4  # x = x - floor(x / (2*pi)) * 2*pi,
+                         # so f12 is now in [0;2pi)
+	# Manipulating $f0 so that cos.raw gets $f0 [0;pi/2) for higher precision
+	# therefore find the correct quadrant, calculate cos0 and adjust the value
+	# see documentation for details
 	l.d $f2, dbl_half_pi
 	c.lt.d $f12, $f2
 	bc1t cos_lower_half_pi
@@ -223,43 +250,51 @@ cos.d:
 	cos_lower_half_pi:
 		jal cos0
 	cos_end:
+
+  # restore $ra from stack
 	lw		$ra, 0($sp)
 	addi	$sp, 4
+
 	jr $ra
+# cos.d end #########################################
+#####################################################
 
-#x: ($f12, $f13)
-#return: ($f0, $f1)
-#Accurate for 0 <= x <= pi/2
-#$t0 = amount of approx. terms
-#($f0, $f1) = current value of cos
-#($f2, $f3) = last taylor series element without (-1)^n
-#($f4, $f5) = (-1)^n
-#($f6, $f7) = ($f0, $f1)^2
-#($f8, $f9) = n
-#($f10, $f11) = n * (n - 1)
-#($f12, $f13) = $f4 * $f6/$f10
-#($f14, $f15) = 1.0
-#($f16, $f16) = 3.0
-
+# cos0 #########################################
+# calculate the taylor expension of cos
+# Accurate for 0 <= x <= pi/2
+# argument x: ($f12, $f13)
+# return: ($f0, $f1)
+# $t0 = amount of approx. terms
+# ($f0, $f1) = current value of cos
+# ($f2, $f3) = last taylor series element without (-1)^n
+# ($f4, $f5) = (-1)^n
+# ($f6, $f7) = ($f0, $f1)^2
+# ($f8, $f9) = n
+# ($f10, $f11) = n * (n - 1)
+# ($f12, $f13) = $f4 * $f6/$f10
+# ($f14, $f15) = 1.0
+# ($f16, $f16) = 3.0
 cos0:
-	li.d	$f14, 1.0
-	li.d	$f16, 3.0
-	li 		$t0, 40
-	mov.d 	$f0, $f14
-	mov.d	$f2, $f0
-	li.d 	$f4, -1.0
-	mul.d	$f6, $f12, $f12
-	li.d 	$f8, 2.0
+	li.d	$f14, 1.0   # const 1.0
+	li.d	$f16, 3.0   # const 3.0
+	li 		$t0, 40     # number of taylor loops, adjust here for precision vs speed
+	mov.d $f0, $f14   # f0 = 1.0
+	mov.d	$f2, $f0    # f2 = 1.0
+	li.d 	$f4, -1.0   # f4 = -1.0
+	mul.d	$f6, $f12, $f12 # f6 = x^2
+	li.d 	$f8, 2.0    # f8 = n = 2.0
 	cos0_loop_start:
-		mov.d 	$f10, $f8
-		sub.d 	$f8 , $f8, $f14
-		mul.d 	$f10, $f10, $f8
-		div.d 	$f2, $f2, $f10
-		mul.d 	$f2, $f2, $f6
-		mul.d 	$f12, $f2, $f4
-		add.d 	$f0, $f0, $f12
-		neg.d 	$f4, $f4
-		add.d 	$f8, $f8, $f16
-		addi 	$t0, $t0, -2
+		mov.d 	$f10, $f8        # f10 = n
+		sub.d 	$f8 , $f8, $f14  # f8 = n - 1.0
+		mul.d 	$f10, $f10, $f8  # f10 = n * (n-1)
+		div.d 	$f2, $f2, $f10   # f2 = prev_taylor / (n*(n-1))
+		mul.d 	$f2, $f2, $f6    # f2 = prev_taylor * x^2 / (n*(n-1))
+		mul.d 	$f12, $f2, $f4   # x = prev_taylor * f4 * x^2 / (n*(n-1))
+		add.d 	$f0, $f0, $f12   # f0 += x
+		neg.d 	$f4, $f4         # f4 = -f4
+		add.d 	$f8, $f8, $f16   # f8 = n + 2.0
+		addi 	$t0, $t0, -2       # decrease loop variable
 	bge $t0, $zero, cos0_loop_start
 	jr $ra
+# cos0 end #########################################
+##################################################
