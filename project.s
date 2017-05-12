@@ -10,6 +10,8 @@ tbl_header: .ascii  "| x | sin(x) | cos(x) | tan(x) |\n"
 tbl_sep_l:  .asciiz "| "
 tbl_sep_m:  .asciiz " | "
 tbl_sep_r:  .asciiz " |\n"
+wrong_msg:  .asciiz "Incorrect input, make sure n > 0 and x_min <= x_max\n"
+restart_msg: .asciiz "Restarting programm ...\n"
 newline:    .asciiz "\n"
 .align 2
 dbl_const_0: .double 0.0
@@ -29,14 +31,6 @@ dbl_half_pi: .double 1.57079632679489661923132169163975144
 # $f16 temp_f
 # $f18 temp_f2
 main:
-#  li $t0, 5
-#  mtc1.d  $t0, $f12
-#  cvt.d.w $f12, $f12
-#  jal cos.d
-
-  #li $v0, 10
-  #syscall
-
 
   # ask for n
   li    $v0, 4      # systemcall print string
@@ -53,7 +47,7 @@ main:
   li    $v0, 7      # systemcall read double
   syscall
   mov.d $f20, $f0   # x_i = x_min
-  
+
   # ask for x_max
   li    $v0, 4      # systemcall print string
   la    $a0, ask_x_max
@@ -62,12 +56,25 @@ main:
   syscall
   mov.d $f16, $f0   # temp_f = x_max
 
+  # test if !(x_min <= x_max) ==> error
+  c.le.d $f20, $f16
+  bc1f  reenter
+
+  # test if n <= 0 ==> error
+  ble   $s0, $zero, reenter
+
   # calculate step size
-  # TODO maybe divide by n-1 here to get x_max into the table
+  # divide by n-1 if n>1 here to get x_max into the table
   sub.d $f16, $f16, $f20  # temp_f = x_max - x_min
-  mtc1.d  $s0, $f18
-  cvt.d.w $f18, $f18      # tempf2 = n
-  div.d $f22, $f16, $f18  # delta_x = (x_max - x_min) / n
+  move  $t0, $s0          # t0 = n
+  li    $t1, 1            # const 1
+  # if (n!=1) t0--, which is n>1
+  beq   $t0, $t1, not_dec_n
+  addi  $t0, $t0, -1      # t0 = n-1
+  not_dec_n:
+  mtc1.d  $t0, $f18
+  cvt.d.w $f18, $f18      # tempf2 = (n or n-1)
+  div.d $f22, $f16, $f18  # delta_x = (x_max - x_min) / (n or n-1)
 
   # print table header
   li    $v0, 4      # systemcall print string
@@ -93,8 +100,6 @@ main:
 
     # calc sin(x)
     mov.d $f12, $f20
-
-    # TODO just a test
     jal sin.d
 
     # print sin(x)
@@ -110,7 +115,7 @@ main:
     # calc cos(x)
     mov.d $f12, $f20
     jal cos.d
-    
+
     # print cos(x)
     li    $v0, 3      # systemcall print double
     mov.d $f12, $f0
@@ -139,10 +144,25 @@ main:
     addi  $s0, $s0, -1      # n--
     bne   $s0, $zero, loop  # loop downto 0
 
-
   #terminate program
-  li    $v0, 10     # code 10 terminates the program
+  #li    $v0, 10     # code 10 terminates the program
+  #syscall
+  j restart
+
+reenter:
+  # print error message
+  li    $v0, 4      # systemcall print string
+  la    $a0, wrong_msg
   syscall
+  # fall trough restart
+
+restart:
+  # print restart message
+  li    $v0, 4      # systemcall print string
+  la    $a0, restart_msg
+  syscall
+  j     main
+
 # end main ##########################################
 
 
